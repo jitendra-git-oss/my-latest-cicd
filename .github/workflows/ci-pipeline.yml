@@ -35,12 +35,12 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          # Pehle se chal rahe purane container ko stop aur remove karega
-          docker stop web-app || true
-          docker rm web-app || true
+          # Yahan ab sudo lagana zaroori hai
+          sudo docker stop web-app || true
+          sudo docker rm web-app || true
           
-          # Nayi image pull karega
-          docker pull jk78600/my-latest-cicd:latest
+          # Image pull ke aage bhi sudo
+          sudo docker pull jk78600/my-latest-cicd:latest
           
-          # Naya container port 80 par start karega
-          docker run -d --name web-app -p 80:80 jk78600/my-latest-cicd:latest
+          # Run command ke aage bhi sudo
+          sudo docker run -d --name web-app -p 80:80 jk78600/my-latest-cicd:latest
