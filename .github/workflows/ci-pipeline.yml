@@ -1,0 +1,17 @@
+name: Fresh CI Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  automated-build-check:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Test Docker Build
+      run: |
+        docker build -t test-app:latest .
+        echo "Success! Cloud build perfectly complete."
