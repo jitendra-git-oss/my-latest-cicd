@@ -5,36 +5,27 @@ on:
     branches: [ "main" ]
 
 jobs:
-  # -------------------------------------------------------
-  # STAGE 1: Testing Stage (Naya Add Hua Hai)
-  # -------------------------------------------------------
   test:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-
     - name: Run Code Quality & Unit Tests
       run: |
         echo "Running application syntax checks..."
         echo "All unit tests passed successfully! [OK]"
 
-  # -------------------------------------------------------
-  # STAGE 2: Build and Push (Ab ye test par depend karega)
-  # -------------------------------------------------------
   build-and-push:
     runs-on: ubuntu-latest
-    needs: test # CRITICAL: Test pass hone par hi aage badhega
+    needs: test
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-
     - name: Login to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-
     - name: Build and Push Docker Image
       uses: docker/build-push-action@v5
       with:
@@ -42,9 +33,6 @@ jobs:
         push: true
         tags: jk78600/my-latest-cicd:latest
 
-  # -------------------------------------------------------
-  # STAGE 3: Continuous Deployment (Caching Fix Ke Sath)
-  # -------------------------------------------------------
   deploy-to-ec2:
     runs-on: ubuntu-latest
     needs: build-and-push
@@ -56,11 +44,39 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          sudo docker stop web-app || true
-          sudo docker rm web-app || true
+          # 1. Check karo abhi active port kaun sa chal raha hai (8081 ya 8082)
+          CURRENT_PORT=$(sudo docker port web-app-blue 80 2>/dev/null | cut -d':' -f2 || echo "8082")
           
-          # Caching Fix: Puraani image delete karein taaki "My Code" wala text update ho sake
+          if [ "$CURRENT_PORT" == "8081" ]; then
+            TARGET_PORT="8082"
+            TARGET_NAME="web-app-green"
+            OLD_NAME="web-app-blue"
+          else
+            TARGET_PORT="8081"
+            TARGET_NAME="web-app-blue"
+            OLD_NAME="web-app-green"
+          fi
+          
+          echo "Current active port is $CURRENT_PORT. Deploying new version to target port $TARGET_PORT..."
+          
+          # 2. Target container agar pehle se chal raha ho toh use clean karein
+          sudo docker stop $TARGET_NAME || true
+          sudo docker rm $TARGET_NAME || true
           sudo docker rmi jk78600/my-latest-cicd:latest || true
           
+          # 3. Fresh image pull karke target port par run karein (Purana container abhi bhi live hai!)
           sudo docker pull jk78600/my-latest-cicd:latest
-          sudo docker run -d --name web-app -p 80:80 jk78600/my-latest-cicd:latest
+          sudo docker run -d --name $TARGET_NAME -p $TARGET_PORT:80 jk78600/my-latest-cicd:latest
+          
+          # 4. 3 seconds wait karein container ko fully ready hone ke liye
+          sleep 3
+          
+          # 5. Nginx config me port switch karein aur bina reload downtime ke traffic shift karein
+          sudo sed -i "s/proxy_pass http:\/\/127.0.0.1:.*/proxy_pass http:\/\/127.0.0.1:$TARGET_PORT;/" /etc/nginx/nginx.conf
+          sudo systemctl reload nginx
+          
+          echo "Traffic successfully routed to $TARGET_NAME on port $TARGET_PORT!"
+          
+          # 6. Ab sukoon se purane container ko stop karke clean kar dein
+          sudo docker stop $OLD_NAME || true
+          sudo docker rm $OLD_NAME || true
